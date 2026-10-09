@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { registerAuthPlugin } from './auth/plugin.js';
+import { registerSwagger } from './docs/swagger.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { userRoutes } from './routes/user.routes.js';
 import { templateRoutes } from './routes/template.routes.js';
@@ -49,6 +50,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Authentication Plugin
   await registerAuthPlugin(app);
+
+  // OpenAPI / Swagger Documentation
+  await registerSwagger(app);
 
   // Global Error Handler
   app.setErrorHandler((error: any, _request, reply) => {
