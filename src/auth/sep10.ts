@@ -56,7 +56,6 @@ export class Sep10Service {
           value: Buffer.from(nonce, 'utf-8'),
         })
       )
-      .setTimeout(TimeoutInfinite)
       .build();
 
     // Sign with server private key
