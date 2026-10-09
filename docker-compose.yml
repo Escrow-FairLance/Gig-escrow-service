@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fairlance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fairlance
+      POSTGRES_PASSWORD: fairlance123
+      POSTGRES_DB: gig_escrow_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fairlance -d gig_escrow_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: fairlance-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: fairlance-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP port
+      - "8025:8025" # Web UI
+
+volumes:
+  postgres_data:
+  minio_data:
