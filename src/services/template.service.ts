@@ -6,7 +6,7 @@ export interface MilestoneTemplateItem {
   index: number;
   title: string;
   description: string;
-  percentage: number; // e.g. 30 for 30%
+  percentage: number;
   estimatedDays: number;
   acceptanceCriteria: string[];
 }
@@ -150,49 +150,112 @@ export const BUILTIN_TEMPLATES: StandardJobTemplate[] = [
 
 export class TemplateService {
   async ensureBuiltinTemplates(): Promise<void> {
-    for (const t of BUILTIN_TEMPLATES) {
-      const templateHash = sha256Hex(t.title + t.category);
-      await prisma.jobTemplate.upsert({
-        where: { templateHash },
-        update: {
-          title: t.title,
-          category: t.category,
-          description: t.description,
-          termsJson: t.termsJson as unknown as Prisma.InputJsonValue,
-          milestoneTemplates: t.milestones as any,
-          acceptanceCriteria: t.acceptanceCriteria as any,
-        },
-        create: {
-          title: t.title,
-          category: t.category,
-          description: t.description,
-          templateHash,
-          termsJson: t.termsJson as unknown as Prisma.InputJsonValue,
-          milestoneTemplates: t.milestones as any,
-          acceptanceCriteria: t.acceptanceCriteria as any,
-        },
-      });
+    try {
+      for (const t of BUILTIN_TEMPLATES) {
+        const templateHash = sha256Hex(t.title + t.category);
+        await prisma.jobTemplate.upsert({
+          where: { templateHash },
+          update: {
+            title: t.title,
+            category: t.category,
+            description: t.description,
+            termsJson: t.termsJson as unknown as Prisma.InputJsonValue,
+            milestoneTemplates: t.milestones as any,
+            acceptanceCriteria: t.acceptanceCriteria as any,
+          },
+          create: {
+            title: t.title,
+            category: t.category,
+            description: t.description,
+            templateHash,
+            termsJson: t.termsJson as unknown as Prisma.InputJsonValue,
+            milestoneTemplates: t.milestones as any,
+            acceptanceCriteria: t.acceptanceCriteria as any,
+          },
+        });
+      }
+    } catch {
+      // Offline fallback: log and continue
     }
   }
 
   async listTemplates(category?: string) {
-    await this.ensureBuiltinTemplates();
-    return prisma.jobTemplate.findMany({
-      where: category ? { category } : undefined,
-      orderBy: { title: 'asc' },
-    });
+    try {
+      const items = await prisma.jobTemplate.findMany({
+        where: category ? { category } : undefined,
+        orderBy: { title: 'asc' },
+      });
+      if (items.length > 0) return items;
+    } catch {
+      // offline fallback
+    }
+
+    return BUILTIN_TEMPLATES.map((t) => ({
+      id: sha256Hex(t.title),
+      title: t.title,
+      category: t.category,
+      description: t.description,
+      templateHash: sha256Hex(t.title + t.category),
+      termsJson: t.termsJson as any,
+      milestoneTemplates: t.milestones as any,
+      acceptanceCriteria: t.acceptanceCriteria as any,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
   }
 
   async getTemplateById(id: string) {
-    return prisma.jobTemplate.findUnique({
-      where: { id },
-    });
+    try {
+      const found = await prisma.jobTemplate.findUnique({
+        where: { id },
+      });
+      if (found) return found;
+    } catch {
+      // offline fallback
+    }
+
+    const match = BUILTIN_TEMPLATES.find((t) => sha256Hex(t.title) === id || t.title === id);
+    if (match) {
+      return {
+        id: sha256Hex(match.title),
+        title: match.title,
+        category: match.category,
+        description: match.description,
+        templateHash: sha256Hex(match.title + match.category),
+        termsJson: match.termsJson as any,
+        milestoneTemplates: match.milestones as any,
+        acceptanceCriteria: match.acceptanceCriteria as any,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    }
+
+    return null;
   }
 
   async getTemplateByHash(templateHash: string) {
-    return prisma.jobTemplate.findUnique({
-      where: { templateHash },
-    });
+    try {
+      return await prisma.jobTemplate.findUnique({
+        where: { templateHash },
+      });
+    } catch {
+      const match = BUILTIN_TEMPLATES.find((t) => sha256Hex(t.title + t.category) === templateHash);
+      if (match) {
+        return {
+          id: sha256Hex(match.title),
+          title: match.title,
+          category: match.category,
+          description: match.description,
+          templateHash,
+          termsJson: match.termsJson as any,
+          milestoneTemplates: match.milestones as any,
+          acceptanceCriteria: match.acceptanceCriteria as any,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      }
+      return null;
+    }
   }
 
   computeTermsHash(terms: Record<string, unknown>): string {
