@@ -1,0 +1,282 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CLIENT
+  FREELANCER
+  ARBITRATOR
+  ADMIN
+}
+
+enum JobStatus {
+  CREATED
+  ACTIVE
+  DISPUTED
+  COMPLETED
+  CANCELLED
+  DECLINED
+  STALLED_RECLAIMED
+  ABANDONED
+  CLOSED
+}
+
+enum MilestoneStatus {
+  PENDING
+  SUBMITTED
+  REVISION_REQUESTED
+  APPROVED
+  DISPUTED
+  RESOLVED
+}
+
+enum DisputeStatus {
+  ACTIVE
+  RESOLVED
+}
+
+enum AnchorTxKind {
+  DEPOSIT
+  WITHDRAW
+}
+
+enum AnchorTxStatus {
+  INCOMPLETE
+  PENDING_USER_TRANSFER_START
+  PENDING_EXTERNAL
+  PENDING_ANCHOR
+  PENDING_STELLAR
+  PENDING_TRUST
+  PENDING_USER
+  COMPLETED
+  ERROR
+}
+
+model User {
+  id          String   @id @default(uuid())
+  address     String   @unique
+  role        Role     @default(FREELANCER)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  profile           Profile?
+  arbitratorProfile ArbitratorProfile?
+  notifications     Notification[]
+}
+
+model Profile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName     String?
+  email           String?
+  bio             String?
+  avatarUrl       String?
+  skills          String[]
+  languages       String[]
+  country         String?
+  timezone        String?
+  webhookUrl      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ArbitratorProfile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills              String[]
+  languages           String[]
+  feeBps              Int      @default(500)
+  minStake            BigInt   @default(10000000)
+  stakedAmount        BigInt   @default(0)
+  activeCasesCount    Int      @default(0)
+  totalCasesVoted     Int      @default(0)
+  totalCasesSlashed   Int      @default(0)
+  totalFeesEarned     BigInt   @default(0)
+  reputationScore     Float    @default(100.0)
+  isAvailable         Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model JobTemplate {
+  id                  String   @id @default(uuid())
+  title               String
+  category            String
+  description         String
+  templateHash        String   @unique
+  termsJson           Json
+  milestoneTemplates  Json
+  acceptanceCriteria  Json
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Job {
+  id                    String      @id @default(uuid())
+  onChainJobId          BigInt?     @unique
+  clientAddress         String
+  freelancerAddress     String
+  tokenAddress          String
+  totalAmount           BigInt
+  escrowBalance         BigInt
+  status                JobStatus   @default(CREATED)
+  currentMilestoneIndex Int         @default(0)
+  milestoneCount        Int         @default(0)
+  termsHash             String
+  templateHash          String
+  arbitratorFeeBps      Int         @default(500)
+  clientCancelFeeBps    Int         @default(0)
+  reviewWindowSeconds   BigInt      @default(259200)
+  workTimeoutSeconds    BigInt      @default(604800)
+  disputeWindowSeconds  BigInt      @default(432000)
+  arbitratorStakeReq    BigInt      @default(10000000)
+  arbitratorPanel       String[]
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  milestones            Milestone[]
+  disputes              Dispute[]
+}
+
+model Milestone {
+  id                    String          @id @default(uuid())
+  jobId                 String
+  job                   Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  index                 Int
+  title                 String
+  description           String?
+  amount                BigInt
+  deadline              DateTime
+  titleHash             String
+  deliverableHash       String?
+  revisionFeedbackHash  String?
+  revisionCount         Int             @default(0)
+  status                MilestoneStatus @default(PENDING)
+  submittedAt           DateTime?
+  approvedAt            DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  deliverables          Deliverable[]
+
+  @@unique([jobId, index])
+}
+
+model Deliverable {
+  id              String    @id @default(uuid())
+  milestoneId     String
+  milestone       Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  uploaderAddress String
+  s3Key           String
+  fileName        String
+  fileSizeBytes   BigInt
+  mimeType        String
+  sha256Hash      String
+  isEncrypted     Boolean   @default(true)
+  encryptionIv    String?
+  createdAt       DateTime  @default(now())
+}
+
+model Dispute {
+  id                          String        @id @default(uuid())
+  jobId                       String
+  job                         Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  milestoneIndex              Int
+  openedBy                    String
+  reason                      String?
+  reasonHash                  String
+  status                      DisputeStatus @default(ACTIVE)
+  votingDeadline              DateTime
+  arbitratorFeeAmount         BigInt        @default(0)
+  settledFreelancerShareBps   Int?
+  createdAt                   DateTime      @default(now())
+  resolvedAt                  DateTime?
+
+  evidences                   Evidence[]
+  votes                       ArbitratorVote[]
+
+  @@unique([jobId, milestoneIndex])
+}
+
+model Evidence {
+  id                String   @id @default(uuid())
+  disputeId         String
+  dispute           Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  submitterAddress  String
+  s3Key             String
+  fileName          String
+  sha256Hash        String
+  description       String?
+  isEncrypted       Boolean  @default(true)
+  encryptionIv      String?
+  createdAt         DateTime @default(now())
+}
+
+model ArbitratorVote {
+  id                  String   @id @default(uuid())
+  disputeId           String
+  dispute             Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  arbitratorAddress   String
+  freelancerShareBps  Int
+  txHash              String?
+  votedAt             DateTime @default(now())
+
+  @@unique([disputeId, arbitratorAddress])
+}
+
+model IndexerCursor {
+  id            String   @id @default(uuid())
+  contractId    String   @unique
+  pagingToken   String?
+  lastLedger    Int      @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+model EventLog {
+  id          String   @id @default(uuid())
+  contractId  String
+  topic       String
+  txHash      String
+  ledgerSeq   Int
+  eventData   Json
+  createdAt   DateTime @default(now())
+
+  @@unique([contractId, txHash, topic])
+}
+
+model Notification {
+  id              String   @id @default(uuid())
+  userAddress     String
+  user            User     @relation(fields: [userAddress], references: [address], onDelete: Cascade)
+  type            String
+  title           String
+  message         String
+  data            Json?
+  isRead          Boolean  @default(false)
+  deliveredVia    String[]
+  createdAt       DateTime @default(now())
+}
+
+model AnchorTransaction {
+  id                      String         @id @default(uuid())
+  userAddress             String
+  anchorDomain            String
+  assetCode               String
+  kind                    AnchorTxKind
+  status                  AnchorTxStatus @default(INCOMPLETE)
+  interactiveUrl          String?
+  externalTransactionId   String?
+  stellarTransactionId    String?
+  amountIn                Decimal?
+  amountOut               Decimal?
+  amountFee               Decimal?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+}
