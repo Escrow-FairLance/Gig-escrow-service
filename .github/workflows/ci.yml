@@ -1,0 +1,63 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fairlance
+          POSTGRES_PASSWORD: fairlance123
+          POSTGRES_DB: gig_escrow_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Generate Prisma Client
+        run: bunx prisma generate
+
+      - name: TypeScript Typecheck
+        run: bun run tsc --noEmit
+
+      - name: Run Unit & Integration Tests
+        run: bun test
+        env:
+          DATABASE_URL: postgresql://fairlance:fairlance123@localhost:5432/gig_escrow_db?schema=public
+          JWT_SECRET: super-secret-jwt-key-replace-in-production-min-32-chars
+          STELLAR_NETWORK: testnet
+          STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+          SOROBAN_RPC_URL: https://soroban-testnet.stellar.org
+          HORIZON_URL: https://horizon-testnet.stellar.org
+          ESCROW_CONTRACT_ID: CDG3CB5IEATXZPTL3SQGCBVJM2A4HUX4J5TTFGMA7NPGFQBMQBYFXZCB
+          NATIVE_ASSET_ID: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+          SERVER_SIGNING_KEY: SCLRUT6PNJ6ZAB6XNS4NCWGI42B5H4PMYFG6Z62V4GIM6FQUXYCKNMGV
+          SERVER_ACCOUNT_ID: GB6CML3GZYGJ4BLR2PK5QTKQIF6KTT56ZXXTIHXTWG4JAPB3RKDVQTU4
